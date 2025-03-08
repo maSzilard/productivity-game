@@ -2,7 +2,7 @@ import "./globals.css"
 import type { Metadata } from "next"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
-import ClientLayout from "@/components/client-layout"
+import ClientLayout from "../components/client-layout"
 
 export const metadata: Metadata = {
   title: "Productivity Game",
