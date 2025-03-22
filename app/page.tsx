@@ -9,9 +9,56 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { ArrowUpRight, ArrowDownRight, Flame, Trophy, TrendingUp, Clock, Calendar, Bell } from "lucide-react"
 import { CircularProgressIndicator } from "@/components/circular-progress"
 import { ActivityTimeline } from "@/components/activity-timeline"
+import { useRescueTime } from "@/hooks/use-rescuetime"
+
+function formatTime(seconds: number) {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return `${hours}h ${minutes}m`
+}
+
+function getDateRangeText(period: "today" | "week" | "month") {
+  const today = new Date()
+  const startDate = new Date()
+
+  switch (period) {
+    case "today":
+      return today.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      })
+    case "week":
+      // Calculate last Monday
+      const day = today.getDay()
+      const diff = today.getDate() - day + (day === 0 ? -6 : 1) // Adjust when day is Sunday
+      startDate.setDate(diff)
+      return `${startDate.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric' 
+      })} - ${today.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric' 
+      })}`
+    case "month":
+      startDate.setMonth(today.getMonth() - 1)
+      return `${startDate.toLocaleDateString('en-US', { 
+        month: 'long', 
+        year: 'numeric' 
+      })} - ${today.toLocaleDateString('en-US', { 
+        month: 'long', 
+        year: 'numeric' 
+      })}`
+  }
+}
 
 export default function Dashboard() {
-  const setActiveTab = useState("today")[1]
+  const [activeTab, setActiveTab] = useState<"today" | "week" | "month">("today")
+  const { data, loading, error } = useRescueTime(activeTab)
+
+  const productivePercentage = data ? (data.productive / data.total) * 100 : 0
+  const dateRangeText = getDateRangeText(activeTab)
 
   return (
     <div className="flex flex-col h-full">
@@ -19,16 +66,23 @@ export default function Dashboard() {
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-2">
             <SidebarTrigger className="lg:hidden" />
-            <h1 className="text-2xl font-bold">Dashboard</h1>
+            <div>
+              <h1 className="text-2xl font-bold">Dashboard</h1>
+              <p className="text-sm text-muted-foreground">{dateRangeText}</p>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <Flame className="h-5 w-5 text-orange-500" />
-              <span className="font-medium">7 Day Streak</span>
+              <span className="font-medium">
+                {loading ? "Loading..." : data ? `${data.streak.currentStreak} Day Streak` : "0 Day Streak"}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <Trophy className="h-5 w-5 text-yellow-500" />
-              <span className="font-medium">1,250 Points</span>
+              <span className="font-medium">
+                {loading ? "Loading..." : data ? `Best: ${data.streak.bestStreak} days` : "Best: 0 days"}
+              </span>
             </div>
             <Button size="sm">Check In</Button>
           </div>
@@ -36,17 +90,11 @@ export default function Dashboard() {
       </header>
 
       <div className="flex-1 overflow-auto p-6">
-        <Tabs defaultValue="today" className="mb-6">
+        <Tabs defaultValue="today" className="mb-6" onValueChange={(value) => setActiveTab(value as "today" | "week" | "month")}>
           <TabsList>
-            <TabsTrigger value="today" onClick={() => setActiveTab("today")}>
-              Today
-            </TabsTrigger>
-            <TabsTrigger value="week" onClick={() => setActiveTab("week")}>
-              This Week
-            </TabsTrigger>
-            <TabsTrigger value="month" onClick={() => setActiveTab("month")}>
-              This Month
-            </TabsTrigger>
+            <TabsTrigger value="today">Today</TabsTrigger>
+            <TabsTrigger value="week">This Week</TabsTrigger>
+            <TabsTrigger value="month">This Month</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -54,50 +102,63 @@ export default function Dashboard() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Productive Hours</CardDescription>
-              <CardTitle className="text-2xl">5.2 / 8</CardTitle>
+              <CardTitle className="text-2xl">
+                {loading ? "Loading..." : data ? formatTime(data.productive) : "0h 0m"}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center text-sm text-muted-foreground">
                 <ArrowUpRight className="mr-1 h-4 w-4 text-green-500" />
-                <span className="text-green-500 font-medium">12%</span>
-                <span className="ml-1">vs yesterday</span>
+                <span className="text-green-500 font-medium">{productivePercentage.toFixed(1)}%</span>
+                <span className="ml-1">of total time</span>
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Focus Score</CardDescription>
-              <CardTitle className="text-2xl">78/100</CardTitle>
+              <CardDescription>Neutral Hours</CardDescription>
+              <CardTitle className="text-2xl">
+                {loading ? "Loading..." : data ? formatTime(data.neutral) : "0h 0m"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center text-sm text-muted-foreground">
+                <Clock className="mr-1 h-4 w-4 text-yellow-500" />
+                <span className="text-yellow-500 font-medium">
+                  {data ? ((data.neutral / data.total) * 100).toFixed(1) : "0"}%
+                </span>
+                <span className="ml-1">of total time</span>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Distracting Hours</CardDescription>
+              <CardTitle className="text-2xl">
+                {loading ? "Loading..." : data ? formatTime(data.distracting) : "0h 0m"}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center text-sm text-muted-foreground">
                 <ArrowDownRight className="mr-1 h-4 w-4 text-red-500" />
-                <span className="text-red-500 font-medium">5%</span>
-                <span className="ml-1">vs last week</span>
+                <span className="text-red-500 font-medium">
+                  {data ? ((data.distracting / data.total) * 100).toFixed(1) : "0"}%
+                </span>
+                <span className="ml-1">of total time</span>
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Achievements</CardDescription>
-              <CardTitle className="text-2xl">3 New</CardTitle>
+              <CardDescription>Total Time</CardDescription>
+              <CardTitle className="text-2xl">
+                {loading ? "Loading..." : data ? formatTime(data.total) : "0h 0m"}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center text-sm text-muted-foreground">
-                <Trophy className="mr-1 h-4 w-4 text-yellow-500" />
-                <span>12 total this month</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Improvement</CardDescription>
-              <CardTitle className="text-2xl">+15%</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center text-sm text-muted-foreground">
-                <TrendingUp className="mr-1 h-4 w-4 text-green-500" />
-                <span>vs 30 day average</span>
+                <TrendingUp className="mr-1 h-4 w-4 text-blue-500" />
+                <span>Tracked time</span>
               </div>
             </CardContent>
           </Card>
@@ -116,12 +177,16 @@ export default function Dashboard() {
           <Card>
             <CardHeader>
               <CardTitle>Today&apos;s Productivity</CardTitle>
-              <CardDescription>5.2 hours of 8 hour goal</CardDescription>
+              <CardDescription>
+                {loading ? "Loading..." : data ? `${formatTime(data.productive)} of ${formatTime(data.total)} goal` : "0h 0m of 0h 0m goal"}
+              </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col items-center justify-center">
-              <CircularProgressIndicator value={65} size={180} strokeWidth={12} />
+              <CircularProgressIndicator value={productivePercentage} size={180} strokeWidth={12} />
               <div className="mt-4 text-center">
-                <p className="text-sm text-muted-foreground">2.8 hours left to reach your goal</p>
+                <p className="text-sm text-muted-foreground">
+                  {loading ? "Loading..." : data ? `${formatTime(data.total - data.productive)} left to reach your goal` : "0h 0m left to reach your goal"}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -230,6 +295,70 @@ export default function Dashboard() {
                     <p className="text-sm text-muted-foreground">Friday, 3:00 PM</p>
                   </div>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Personal Records</CardTitle>
+              <CardDescription>Your best performance metrics</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {loading ? (
+                  <div className="flex items-center justify-center h-32">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : data ? (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Trophy className="h-5 w-5 text-yellow-500" />
+                        <span className="text-sm font-medium">Best Streak</span>
+                      </div>
+                      <span className="text-2xl font-bold">{data.records.bestStreak} days</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-green-500" />
+                        <span className="text-sm font-medium">Most Productive Day</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-2xl font-bold">
+                          {formatTime(data.records.mostProductiveDay.productive)}
+                        </span>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(data.records.mostProductiveDay.date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-5 w-5 text-blue-500" />
+                        <span className="text-sm font-medium">Daily Average</span>
+                      </div>
+                      <span className="text-2xl font-bold">
+                        {data.records.averageProductiveHours.toFixed(1)}h
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-5 w-5 text-purple-500" />
+                        <span className="text-sm font-medium">Productive Days</span>
+                      </div>
+                      <span className="text-2xl font-bold">
+                        {data.records.productiveDays}/{data.records.totalDays}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center text-muted-foreground">
+                    No records available
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
